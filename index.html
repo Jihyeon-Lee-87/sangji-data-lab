@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>데이터 실험실 중계소</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 20px; background-color: #f4f4f9; }
+        .card { background: white; padding: 20px; border-radius: 15px; display: inline-block; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; border-radius: 5px; border: none; margin: 5px; }
+        .btn-connect { background-color: #4CAF50; color: white; }
+        .btn-vibe { font-size: 30px; background: #eee; }
+        .btn-vibe.active { background: #ffd700; border: 2px solid #ffa500; }
+        #status { margin-top: 20px; color: #666; }
+        #data-log { font-family: monospace; background: #333; color: #fff; padding: 10px; margin-top: 10px; border-radius: 5px; height: 100px; overflow-y: scroll; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>📊 데이터 실험실 중계소</h1>
+        <p>아두이노를 연결하고 기분을 선택하세요!</p>
+        
+        <button class="btn-connect" onclick="connectSerial()">🔌 아두이노 연결하기</button>
+        
+        <div style="margin-top:20px;">
+            <p>나의 기분(Vibe):</p>
+            <button class="btn-vibe" onclick="setVibe('😊', this)">😊</button>
+            <button class="btn-vibe" onclick="setVibe('😐', this)">😐</button>
+            <button class="btn-vibe" onclick="setVibe('😴', this)">😴</button>
+        </div>
+
+        <div id="status">상태: 연결 대기 중...</div>
+        <div id="data-log">로그가 여기에 표시됩니다...</div>
+    </div>
+
+    <script>
+        // 중요: 본인의 구글 앱스 스크립트 URL로 교체하세요!
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbywxfqtPiSzL_g3R-E8sorFEto-ypcGECyj0kkq9qpm2n6-EEgp7BsoI0X7MRwjADmN/exec";
+        
+        let currentVibe = "N/A";
+        let port;
+        let reader;
+
+        function setVibe(vibe, btn) {
+            currentVibe = vibe;
+            document.querySelectorAll('.btn-vibe').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            log(`기분이 ${vibe}(으)로 설정되었습니다.`);
+        }
+
+        async function connectSerial() {
+            try {
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 9600 });
+                document.getElementById('status').innerText = "상태: 연결됨 🟢";
+                log("아두이노와 연결되었습니다.");
+                
+                const decoder = new TextDecoderStream();
+                port.readable.pipeTo(decoder.writable);
+                const inputStream = decoder.readable;
+                reader = inputStream.getReader();
+
+                readLoop();
+            } catch (error) {
+                console.error(error);
+                document.getElementById('status').innerText = "상태: 연결 실패 🔴";
+            }
+        }
+
+        async function readLoop() {
+            let lineBuffer = "";
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                
+                lineBuffer += value;
+                if (lineBuffer.includes('\n')) {
+                    const lines = lineBuffer.split('\n');
+                    const completeLine = lines[0].trim();
+                    lineBuffer = lines.slice(1).join('\n');
+
+                    if (completeLine) {
+                        processData(completeLine);
+                    }
+                }
+            }
+        }
+
+        function processData(data) {
+            log(`받은 데이터: ${data}`);
+            const parts = data.split(',');
+            if (parts.length >= 7) {
+                const params = new URLSearchParams({
+                    no: parts[0], t: parts[1], h: parts[2],
+                    l: parts[3], s: parts[4], a: parts[5],
+                    d: parts[6], v: currentVibe
+                });
+
+                fetch(`${GAS_URL}?${params.toString()}`, { mode: 'no-cors' })
+                    .then(() => log("✅ 시트로 전송 성공"))
+                    .catch(err => log("❌ 전송 실패: " + err));
+            }
+        }
+
+        function log(msg) {
+            const div = document.getElementById('data-log');
+            div.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+            div.scrollTop = div.scrollHeight;
+        }
+    </script>
+</body>
+</html>
